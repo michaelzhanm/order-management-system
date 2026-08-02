@@ -1,0 +1,33 @@
+# Koyeb 部署配置
+# Koyeb 提供永久免费层，支持 Node.js 后端 + 持久化存储
+# 无需信用卡，从 GitHub 一键部署
+# 文档: https://www.koyeb.com/docs
+
+# 服务配置
+services:
+  - name: order-management-system
+    type: web
+    env: node
+    rootDir: .
+    plan: free
+    # 构建命令：安装后端依赖 + 安装前端依赖并构建
+    buildCommand: |
+      cd server && npm install
+      cd ../client && npm install && npm run build
+    # 启动命令
+    startCommand: cd server && npm start
+    # 环境变量
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        value: my-secret-key-2026
+      - key: DB_PATH
+        value: /data/app.db
+      - key: PORT
+        value: 3000
+    # 持久化存储卷（保存数据库文件）
+    volumes:
+      - name: data
+        mountPath: /data
+        size: 1G
