@@ -1,0 +1,22 @@
+# Zeabur 部署配置说明
+# Zeabur 会自动检测 Node.js 项目，无需额外配置文件
+# 以下是部署时需要在网页端填写的信息备忘
+
+# === 后端服务配置 ===
+# Root Directory: .
+# Build Command: cd server && npm install && cd ../client && npm install && npm run build
+# Start Command: cd server && npm start
+# Port: 3000
+#
+# === 环境变量 ===
+# NODE_ENV=production
+# JWT_SECRET=my-secret-key-2026
+# DB_PATH=/data/app.db
+# PORT=3000
+#
+# === 持久化存储 ===
+# Mount Path: /data
+# Size: 1 GB
+#
+# === 区域选择 ===
+# 推荐选择: 香港 (Hong Kong) 或 东京 (Tokyo)，国内访问最快
