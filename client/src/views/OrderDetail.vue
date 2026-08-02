@@ -208,13 +208,8 @@ async function handleDelete() {
 }
 
 async function openDocument(type) {
-  const token = localStorage.getItem('token');
   try {
-    const res = await fetch(`/api/documents/${type}/${route.params.id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error('请求失败');
-    const html = await res.text();
+    const html = await api.get(`/documents/${type}/${route.params.id}`);
     const win = window.open('', '_blank');
     if (win) {
       win.document.write(html);

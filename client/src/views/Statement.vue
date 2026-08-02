@@ -264,17 +264,7 @@ async function generatePdf() {
   generating.value = true;
   try {
     const [startDate, endDate] = dateRange.value;
-    const token = localStorage.getItem('token');
-    const res = await fetch(
-      `/api/documents/statement/${customerId.value}?startDate=${startDate}&endDate=${endDate}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      ElMessage.error('生成对账单失败：' + (txt || res.status));
-      return;
-    }
-    const html = await res.text();
+    const html = await api.get(`/documents/statement/${customerId.value}`, { params: { startDate, endDate } });
     const win = window.open('', '_blank');
     if (!win) {
       ElMessage.error('新窗口被浏览器拦截，请允许弹窗后重试');
