@@ -35,7 +35,12 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/settings', settingsRoutes);
 
 // 生产环境：提供静态前端文件
-const clientDist = path.join(__dirname, '../../client/dist');
+// Docker 容器: /app/src -> /app/client/dist
+// 本地开发: /server/src -> /client/dist
+let clientDist = path.join(__dirname, '../../client/dist');
+if (!fs.existsSync(clientDist)) {
+  clientDist = path.join(__dirname, '../client/dist');
+}
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   // SPA 回退：所有非 /api 路由都返回 index.html
