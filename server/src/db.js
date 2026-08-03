@@ -119,6 +119,49 @@ export function initDB() {
     );
   `);
 
+  // === 数据库迁移：兼容旧数据库 ===
+
+  // 迁移辅助函数：检查某列是否存在
+  function columnExists(table, column) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+    return cols.some(c => c.name === column);
+  }
+
+  // 1. customers 表添加 order_prefix 字段（旧库可能缺少）
+  if (!columnExists('customers', 'order_prefix')) {
+    db.exec('ALTER TABLE customers ADD COLUMN order_prefix TEXT');
+    console.log('[DB] 迁移: customers 表添加 order_prefix 字段');
+  }
+
+  // 2. orders 表更新 delivery_status CHECK 约束（添加 PARTIAL_SHIPPED）
+  //    SQLite 的 CREATE TABLE IF NOT EXISTS 不会修改已存在表的约束，需要重建表
+  const ordersSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'").get();
+  if (ordersSchema && ordersSchema.sql && !ordersSchema.sql.includes('PARTIAL_SHIPPED')) {
+    db.pragma('foreign_keys = OFF');
+    db.exec(`
+      CREATE TABLE orders_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_no TEXT UNIQUE NOT NULL,
+        customer_id INTEGER NOT NULL REFERENCES customers(id),
+        order_date TEXT NOT NULL,
+        total_amount REAL NOT NULL DEFAULT 0,
+        remark TEXT,
+        delivery_status TEXT NOT NULL DEFAULT 'PENDING' CHECK(delivery_status IN ('PENDING','PARTIAL_SHIPPED','SHIPPED','RECEIVED')),
+        payment_status TEXT NOT NULL DEFAULT 'UNPAID' CHECK(payment_status IN ('UNPAID','PARTIAL','PAID')),
+        paid_amount REAL DEFAULT 0,
+        invoice_status TEXT NOT NULL DEFAULT 'UNINVOICED' CHECK(invoice_status IN ('UNINVOICED','INVOICED')),
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+      );
+      INSERT INTO orders_new SELECT * FROM orders;
+      DROP TABLE orders;
+      ALTER TABLE orders_new RENAME TO orders;
+    `);
+    db.pragma('foreign_keys = ON');
+    console.log('[DB] 迁移: orders 表更新 delivery_status CHECK 约束（添加 PARTIAL_SHIPPED）');
+  }
+
   // 插入默认管理员
   const admin = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
   if (!admin) {
