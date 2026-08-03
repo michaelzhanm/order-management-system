@@ -53,9 +53,23 @@
     <div class="card-box">
       <div class="table-header">
         <span class="table-title">订单列表</span>
-        <el-button type="primary" @click="$router.push('/orders/create')">
-          <el-icon><Plus /></el-icon> 创建订单
-        </el-button>
+        <div class="header-actions">
+          <el-dropdown @command="exportOrders" trigger="click">
+            <el-button :loading="exporting" :icon="Download">
+              导出Excel<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="summary">汇总表（每行一订单）</el-dropdown-item>
+                <el-dropdown-item command="detail">明细表（每行一产品）</el-dropdown-item>
+                <el-dropdown-item command="both" divided>两个Sheet（汇总+明细）</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button type="primary" @click="$router.push('/orders/create')">
+            <el-icon><Plus /></el-icon> 创建订单
+          </el-button>
+        </div>
       </div>
       <div class="table-wrapper">
         <el-table :data="list" v-loading="loading" @row-click="goDetail" style="width: 100%">
@@ -108,6 +122,8 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { ElMessage } from 'element-plus';
+import { Plus, Search, Download, ArrowDown } from '@element-plus/icons-vue';
 import api from '../api';
 import StatusTag from '../components/StatusTag.vue';
 import {
@@ -119,6 +135,7 @@ import {
 
 const router = useRouter();
 const loading = ref(false);
+const exporting = ref(false);
 const list = ref([]);
 const total = ref(0);
 const dateRange = ref([]);
@@ -180,6 +197,53 @@ function goDetail(row) {
   router.push(`/orders/${row.id}`);
 }
 
+// 导出订单：format = summary | detail | both
+async function exportOrders(format) {
+  exporting.value = true;
+  try {
+    const payload = { format };
+    if (filters.search) payload.search = filters.search;
+    if (filters.startDate) payload.startDate = filters.startDate;
+    if (filters.endDate) payload.endDate = filters.endDate;
+    if (filters.delivery_status) payload.delivery_status = filters.delivery_status;
+    if (filters.payment_status) payload.payment_status = filters.payment_status;
+    if (filters.invoice_status) payload.invoice_status = filters.invoice_status;
+
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/exports/orders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      ElMessage.error('导出失败：' + (txt || res.status));
+      return;
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    let fileName = '订单导出.xlsx';
+    const m = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (m && m[1]) fileName = decodeURIComponent(m[1]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    ElMessage.success('导出成功');
+  } catch (e) {
+    ElMessage.error('导出失败，请稍后重试');
+  } finally {
+    exporting.value = false;
+  }
+}
+
 onMounted(() => {
   loadData();
 });
@@ -201,6 +265,12 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .table-title {
