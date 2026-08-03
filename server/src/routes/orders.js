@@ -196,7 +196,7 @@ router.delete('/:id', authRequired, (req, res) => {
   res.json({ message: '订单删除成功' });
 });
 
-// 对账单：按客户+日期范围汇总
+// 对账单：按客户+日期范围汇总（含付款记录，优先抵扣期初欠款）
 router.get('/statement/:customerId', authRequired, (req, res) => {
   const { customerId } = req.params;
   const { startDate, endDate } = req.query;
@@ -215,19 +215,56 @@ router.get('/statement/:customerId', authRequired, (req, res) => {
     FROM orders ${where} ORDER BY order_date
   `).all(...params);
 
+  // 查询该客户所有付款记录（不限日期，用于抵扣期初欠款）
+  const allPayments = db.prepare(`
+    SELECT id, amount, payment_date, remark FROM payments WHERE customer_id = ? ORDER BY payment_date ASC, id ASC
+  `).all(customerId);
+
+  const rawInitialDebt = Number(customer.initial_debt) || 0;
+
+  // 付款优先抵扣期初欠款：累计抵扣，超出部分算作本期已付（仅统计区间内的）
+  let remainingInitial = rawInitialDebt;
+  let paymentAppliedToPeriod = 0; // 区间内付款中用于抵扣本期订单的部分
+  const paymentRecords = allPayments.map((p) => {
+    const amount = Number(p.amount) || 0;
+    let appliedToInitial = 0;
+    let appliedToOrders = 0;
+    if (remainingInitial > 0) {
+      appliedToInitial = Math.min(amount, remainingInitial);
+      remainingInitial -= appliedToInitial;
+    }
+    appliedToOrders = amount - appliedToInitial;
+    // 区间内的付款才计入本期已付
+    const inPeriod = (!startDate || p.payment_date >= startDate) && (!endDate || p.payment_date <= endDate);
+    if (inPeriod) paymentAppliedToPeriod += appliedToOrders;
+    return {
+      id: p.id,
+      amount,
+      payment_date: p.payment_date,
+      remark: p.remark || '',
+      applied_to_initial: appliedToInitial,
+      applied_to_orders: appliedToOrders,
+      in_period: inPeriod,
+    };
+  });
+
   const totalAmount = orders.reduce((s, o) => s + o.total_amount, 0);
-  const totalPaid = orders.reduce((s, o) => s + o.paid_amount, 0);
-  const initialDebt = customer.initial_debt || 0;
-  const balanceDue = initialDebt + totalAmount - totalPaid;
+  const orderPaid = orders.reduce((s, o) => s + o.paid_amount, 0);
+  const totalPaid = orderPaid + paymentAppliedToPeriod;
+  const balanceDue = remainingInitial + totalAmount - totalPaid;
 
   res.json({
     customer,
     orders,
+    payments: paymentRecords,
     summary: {
-      initial_debt: initialDebt,
-      total_amount: totalAmount,
-      total_paid: totalPaid,
-      balance_due: balanceDue,
+      initial_debt: rawInitialDebt,        // 原始期初欠款
+      initial_debt_remaining: remainingInitial, // 抵扣后剩余期初欠款
+      total_amount: totalAmount,            // 本期订单总额
+      order_paid: orderPaid,                // 订单已付（订单状态里的已付金额）
+      payment_in_period: paymentAppliedToPeriod, // 本期付款中抵扣订单的部分
+      total_paid: totalPaid,                // 本期已付合计 = 订单已付 + 付款抵扣订单
+      balance_due: balanceDue,              // 本期应付
       order_count: orders.length,
     },
     dateRange: { startDate: startDate || '', endDate: endDate || '' },
