@@ -39,6 +39,7 @@ export function initDB() {
       address TEXT,
       tax_number TEXT,
       initial_debt REAL DEFAULT 0,
+      order_prefix TEXT,
       created_by INTEGER REFERENCES users(id),
       created_at TEXT DEFAULT (datetime('now','localtime')),
       updated_at TEXT DEFAULT (datetime('now','localtime'))
@@ -51,7 +52,7 @@ export function initDB() {
       order_date TEXT NOT NULL,
       total_amount REAL NOT NULL DEFAULT 0,
       remark TEXT,
-      delivery_status TEXT NOT NULL DEFAULT 'PENDING' CHECK(delivery_status IN ('PENDING','SHIPPED','RECEIVED')),
+      delivery_status TEXT NOT NULL DEFAULT 'PENDING' CHECK(delivery_status IN ('PENDING','PARTIAL_SHIPPED','SHIPPED','RECEIVED')),
       payment_status TEXT NOT NULL DEFAULT 'UNPAID' CHECK(payment_status IN ('UNPAID','PARTIAL','PAID')),
       paid_amount REAL DEFAULT 0,
       invoice_status TEXT NOT NULL DEFAULT 'UNINVOICED' CHECK(invoice_status IN ('UNINVOICED','INVOICED')),
@@ -70,6 +71,27 @@ export function initDB() {
       unit_price REAL NOT NULL DEFAULT 0,
       subtotal REAL NOT NULL DEFAULT 0,
       sort_order INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      specification TEXT,
+      unit TEXT,
+      unit_price REAL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      updated_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS shipping_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+      quantity REAL NOT NULL,
+      shipped_date TEXT NOT NULL,
+      remark TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT DEFAULT (datetime('now','localtime'))
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -111,6 +133,7 @@ export function initDB() {
   const defaults = {
     // 乙方公司信息
     company_name: '我公司',
+    company_order_prefix: '',
     company_contact: '',
     company_phone: '',
     company_address: '',

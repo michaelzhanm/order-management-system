@@ -27,7 +27,13 @@
           <el-table-column prop="contact_name" label="联系人" min-width="100" />
           <el-table-column prop="phone" label="电话" min-width="130" />
           <el-table-column prop="address" label="地址" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="tax_number" label="税号" min-width="160" />
+          <el-table-column prop="tax_number" label="税号" min-width="140" />
+          <el-table-column prop="order_prefix" label="订单前缀(甲)" width="120" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.order_prefix" size="small" type="info">{{ row.order_prefix }}</el-tag>
+              <span v-else style="color:#c0c4cc">-</span>
+            </template>
+          </el-table-column>
           <el-table-column label="初始欠款" width="130" align="right">
             <template #default="{ row }">¥{{ formatMoney(row.initial_debt) }}</template>
           </el-table-column>
@@ -83,6 +89,10 @@
         <el-form-item label="税号" prop="tax_number">
           <el-input v-model="form.tax_number" placeholder="请输入统一社会信用代码/税号" maxlength="50" />
         </el-form-item>
+        <el-form-item label="订单前缀(甲)">
+          <el-input v-model="form.order_prefix" placeholder="如：BJZZ，订单号用做甲方前缀" maxlength="20" />
+          <div class="form-tip">留空则根据公司名自动取拼音首字母。例如"北京制造" → BJZZ</div>
+        </el-form-item>
         <el-form-item label="初始欠款" prop="initial_debt">
           <el-input-number
             v-model="form.initial_debt"
@@ -130,6 +140,7 @@ const form = reactive({
   phone: '',
   address: '',
   tax_number: '',
+  order_prefix: '',
   initial_debt: 0,
 });
 
@@ -186,6 +197,7 @@ function resetForm() {
   form.phone = '';
   form.address = '';
   form.tax_number = '';
+  form.order_prefix = '';
   form.initial_debt = 0;
   formRef.value?.clearValidate();
 }
@@ -208,6 +220,7 @@ async function handleEdit(row) {
     phone: row.phone ?? '',
     address: row.address ?? '',
     tax_number: row.tax_number ?? '',
+    order_prefix: row.order_prefix ?? '',
     initial_debt: Number(row.initial_debt) || 0,
   });
   try {
@@ -218,6 +231,7 @@ async function handleEdit(row) {
       phone: data.phone ?? '',
       address: data.address ?? '',
       tax_number: data.tax_number ?? '',
+      order_prefix: data.order_prefix ?? '',
       initial_debt: Number(data.initial_debt) || 0,
     });
   } catch {
@@ -237,6 +251,7 @@ async function handleSubmit() {
         phone: form.phone,
         address: form.address,
         tax_number: form.tax_number,
+        order_prefix: form.order_prefix || '',
         initial_debt: Number(form.initial_debt) || 0,
       };
       if (isEdit.value) {

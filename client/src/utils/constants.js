@@ -1,7 +1,8 @@
 // 状态映射配置
 export const DELIVERY_STATUS = {
   PENDING: { label: '待发货', color: '#f56c6c', bg: '#fef0f0', type: 'danger' },
-  SHIPPED: { label: '已发货', color: '#e6a23c', bg: '#fdf6ec', type: 'warning' },
+  PARTIAL_SHIPPED: { label: '部分发货', color: '#e6a23c', bg: '#fdf6ec', type: 'warning' },
+  SHIPPED: { label: '已发货', color: '#909399', bg: '#f4f4f5', type: 'info' },
   RECEIVED: { label: '已签收', color: '#67c23a', bg: '#f0f9eb', type: 'success' },
 };
 
@@ -18,6 +19,7 @@ export const INVOICE_STATUS = {
 
 export const DELIVERY_OPTIONS = [
   { value: 'PENDING', label: '待发货' },
+  { value: 'PARTIAL_SHIPPED', label: '部分发货' },
   { value: 'SHIPPED', label: '已发货' },
   { value: 'RECEIVED', label: '已签收' },
 ];
@@ -45,6 +47,6 @@ export function getStatusType(type, value) {
 
 // 金额格式化
 export function formatMoney(num) {
-  if (num === null || num === undefined) return '0.00';
+  if (num === null || num === undefined || num === '') return '0.00';
   return Number(num).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

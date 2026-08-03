@@ -33,20 +33,20 @@ router.get('/:id', authRequired, (req, res) => {
 
 // 新增客户
 router.post('/', authRequired, (req, res) => {
-  const { company_name, contact_name, phone, address, tax_number, initial_debt } = req.body;
+  const { company_name, contact_name, phone, address, tax_number, initial_debt, order_prefix } = req.body;
   if (!company_name) return res.status(400).json({ error: '公司名称不能为空' });
   const existing = db.prepare('SELECT id FROM customers WHERE company_name = ?').get(company_name);
   if (existing) return res.status(400).json({ error: '公司名称已存在' });
   const result = db.prepare(`
-    INSERT INTO customers (company_name, contact_name, phone, address, tax_number, initial_debt, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(company_name, contact_name || '', phone || '', address || '', tax_number || '', initial_debt || 0, req.user.id);
+    INSERT INTO customers (company_name, contact_name, phone, address, tax_number, initial_debt, order_prefix, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(company_name, contact_name || '', phone || '', address || '', tax_number || '', initial_debt || 0, order_prefix || '', req.user.id);
   res.json({ id: result.lastInsertRowid, message: '客户创建成功' });
 });
 
 // 编辑客户
 router.put('/:id', authRequired, (req, res) => {
-  const { company_name, contact_name, phone, address, tax_number, initial_debt } = req.body;
+  const { company_name, contact_name, phone, address, tax_number, initial_debt, order_prefix } = req.body;
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
   if (!customer) return res.status(404).json({ error: '客户不存在' });
   if (company_name && company_name !== customer.company_name) {
@@ -54,7 +54,7 @@ router.put('/:id', authRequired, (req, res) => {
     if (dup) return res.status(400).json({ error: '公司名称已存在' });
   }
   db.prepare(`
-    UPDATE customers SET company_name=?, contact_name=?, phone=?, address=?, tax_number=?, initial_debt=?, updated_at=datetime('now','localtime')
+    UPDATE customers SET company_name=?, contact_name=?, phone=?, address=?, tax_number=?, initial_debt=?, order_prefix=?, updated_at=datetime('now','localtime')
     WHERE id=?
   `).run(
     company_name ?? customer.company_name,
@@ -63,6 +63,7 @@ router.put('/:id', authRequired, (req, res) => {
     address ?? customer.address,
     tax_number ?? customer.tax_number,
     initial_debt ?? customer.initial_debt,
+    order_prefix ?? customer.order_prefix,
     req.params.id
   );
   res.json({ message: '客户更新成功' });

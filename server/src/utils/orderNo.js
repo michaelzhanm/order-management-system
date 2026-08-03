@@ -7,7 +7,6 @@ import db from '../db.js';
  */
 function getInitials(name) {
   if (!name) return 'XX';
-  // 取拼音首字母
   const result = pinyin(name, { pattern: 'first', type: 'array' });
   const letters = result
     .filter(c => /[a-z]/i.test(c))
@@ -17,28 +16,41 @@ function getInitials(name) {
 }
 
 /**
- * 生成订单编号: [乙方首字母]-[甲方首字母]-YYYYMMDD-序号
- * 乙方 = 系统配置的公司名, 甲方 = 客户公司名
+ * 生成订单编号: [乙方前缀]-[甲方前缀]-YYYYMMDD-序号
+ * 优先使用 customer.order_prefix (甲方) 和 settings.company_order_prefix (乙方)，
+ * 若未设置则退回到公司名称拼音首字母。
  */
-export function generateOrderNo(customerName, companyName) {
-  const partyB = getInitials(companyName); // 乙方
-  const partyA = getInitials(customerName); // 甲方
-  const today = new Date();
-  const dateStr =
-    today.getFullYear().toString() +
-    String(today.getMonth() + 1).padStart(2, '0') +
-    String(today.getDate()).padStart(2, '0');
+export function generateOrderNo(customerId, orderDate) {
+  const customer = db.prepare('SELECT company_name, order_prefix FROM customers WHERE id = ?').get(customerId);
+  if (!customer) throw new Error('客户不存在');
+
+  const companySetting = db.prepare("SELECT value FROM settings WHERE key = 'company_name'").get();
+  const companyName = companySetting?.value || '我公司';
+  const prefixSetting = db.prepare("SELECT value FROM settings WHERE key = 'company_order_prefix'").get();
+  const companyOrderPrefix = prefixSetting?.value || '';
+
+  const partyB = companyOrderPrefix || getInitials(companyName);
+  const partyA = customer.order_prefix || getInitials(customer.company_name);
+
+  let dateStr = orderDate;
+  if (!dateStr) {
+    const today = new Date();
+    dateStr =
+      today.getFullYear().toString() +
+      String(today.getMonth() + 1).padStart(2, '0') +
+      String(today.getDate()).padStart(2, '0');
+  } else {
+    dateStr = dateStr.replace(/-/g, '');
+  }
 
   const prefix = `${partyB}-${partyA}-${dateStr}`;
 
-  // 查找当天同前缀的订单数，生成序号
   const existing = db
     .prepare('SELECT order_no FROM orders WHERE order_no LIKE ? ORDER BY order_no')
     .all(`${prefix}%`);
 
   let seq = 1;
   if (existing.length > 0) {
-    // 取最大序号
     const maxSeq = existing.reduce((max, row) => {
       const parts = row.order_no.split('-');
       const num = parseInt(parts[parts.length - 1], 10);

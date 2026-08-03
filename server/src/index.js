@@ -14,6 +14,8 @@ import dashboardRoutes from './routes/dashboard.js';
 import settingsRoutes from './routes/settings.js';
 import paymentRoutes from './routes/payments.js';
 import exportRoutes from './routes/exports.js';
+import productRoutes from './routes/products.js';
+import shippingRoutes from './routes/shipping.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -37,6 +39,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/exports', exportRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/shipping', shippingRoutes);
 
 // 生产环境：提供静态前端文件
 // Docker 容器: /app/src -> /app/client/dist

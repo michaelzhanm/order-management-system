@@ -47,7 +47,7 @@ router.get('/', authRequired, (req, res) => {
   res.json({ list, total, page: parseInt(page), pageSize: parseInt(pageSize) });
 });
 
-// 获取订单详情（含明细）
+// 获取订单详情（含明细+发货记录）
 router.get('/:id', authRequired, (req, res) => {
   const order = db.prepare(`
     SELECT o.*, c.company_name, c.contact_name, c.phone as customer_phone,
@@ -60,19 +60,37 @@ router.get('/:id', authRequired, (req, res) => {
   `).get(req.params.id);
   if (!order) return res.status(404).json({ error: '订单不存在' });
 
-  const items = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort_order').all(req.params.id);
+  // 每个明细附带已发/未发数量
+  const items = db.prepare(`
+    SELECT oi.*,
+           COALESCE((SELECT SUM(quantity) FROM shipping_records sr WHERE sr.order_item_id = oi.id), 0) AS shipped_qty,
+           (oi.quantity - COALESCE((SELECT SUM(quantity) FROM shipping_records sr WHERE sr.order_item_id = oi.id), 0)) AS remaining_qty
+    FROM order_items oi WHERE oi.order_id = ? ORDER BY oi.sort_order
+  `).all(req.params.id);
+
+  const shipping = db.prepare(`
+    SELECT sr.*,
+           oi.product_name, oi.specification, oi.unit, oi.quantity as total_quantity,
+           u.real_name as creator_name
+    FROM shipping_records sr
+    LEFT JOIN order_items oi ON sr.order_item_id = oi.id
+    LEFT JOIN users u ON sr.created_by = u.id
+    WHERE sr.order_id = ?
+    ORDER BY sr.shipped_date DESC, sr.created_at DESC
+  `).all(req.params.id);
+
   const logs = db.prepare(`
     SELECT l.*, u.real_name as user_name FROM order_logs l
     LEFT JOIN users u ON l.user_id = u.id
     WHERE l.order_id = ? ORDER BY l.created_at DESC
   `).all(req.params.id);
 
-  res.json({ ...order, items, logs });
+  res.json({ ...order, items, shipping_records: shipping, logs });
 });
 
 // 创建订单
 router.post('/', authRequired, (req, res) => {
-  const { customer_id, order_date, remark, items } = req.body;
+  const { customer_id, order_no, order_date, remark, items } = req.body;
   if (!customer_id) return res.status(400).json({ error: '请选择客户' });
   if (!order_date) return res.status(400).json({ error: '请选择下单日期' });
   if (!items || items.length === 0) return res.status(400).json({ error: '请添加至少一条订单明细' });
@@ -80,17 +98,21 @@ router.post('/', authRequired, (req, res) => {
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id);
   if (!customer) return res.status(400).json({ error: '客户不存在' });
 
-  // 获取乙方公司名
-  const companySetting = db.prepare("SELECT value FROM settings WHERE key = 'company_name'").get();
-  const companyName = companySetting?.value || '我公司';
-
   // 计算总金额
   const totalAmount = items.reduce((sum, item) => {
     const subtotal = (item.quantity || 0) * (item.unit_price || 0);
     return sum + subtotal;
   }, 0);
 
-  const orderNo = generateOrderNo(customer.company_name, companyName);
+  // 订单号：优先使用传入的自定义值，否则自动生成
+  let orderNo = (order_no || '').trim();
+  if (!orderNo) {
+    orderNo = generateOrderNo(customer_id, order_date);
+  } else {
+    // 唯一性检查
+    const dup = db.prepare('SELECT id FROM orders WHERE order_no = ?').get(orderNo);
+    if (dup) return res.status(400).json({ error: '订单号已存在，请修改或留空自动生成' });
+  }
 
   const insertOrder = db.prepare(`
     INSERT INTO orders (order_no, customer_id, order_date, total_amount, remark, created_by)
@@ -121,16 +143,27 @@ router.post('/', authRequired, (req, res) => {
 // 更新订单（基本信息+明细）
 router.put('/:id', authRequired, (req, res) => {
   const { id } = req.params;
-  const { customer_id, order_date, remark, items } = req.body;
+  const { customer_id, order_no, order_date, remark, items } = req.body;
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
   if (!order) return res.status(404).json({ error: '订单不存在' });
+
+  // 如果传了新的订单号，检查唯一性（允许与旧值相同）
+  let newOrderNo = order.order_no;
+  if (order_no !== undefined) {
+    const trimmed = String(order_no).trim();
+    if (trimmed) {
+      const dup = db.prepare('SELECT id FROM orders WHERE order_no = ? AND id != ?').get(trimmed, id);
+      if (dup) return res.status(400).json({ error: '订单号已存在' });
+      newOrderNo = trimmed;
+    }
+  }
 
   const totalAmount = (items || []).reduce((sum, item) => {
     return sum + (item.quantity || 0) * (item.unit_price || 0);
   }, 0);
 
   const updateOrder = db.prepare(`
-    UPDATE orders SET customer_id=?, order_date=?, remark=?, total_amount=?, updated_at=datetime('now','localtime')
+    UPDATE orders SET order_no=?, customer_id=?, order_date=?, remark=?, total_amount=?, updated_at=datetime('now','localtime')
     WHERE id=?
   `);
   const deleteItems = db.prepare('DELETE FROM order_items WHERE order_id = ?');
@@ -141,7 +174,7 @@ router.put('/:id', authRequired, (req, res) => {
   const insertLog = db.prepare('INSERT INTO order_logs (order_id, user_id, action, detail) VALUES (?, ?, ?, ?)');
 
   const tx = db.transaction(() => {
-    updateOrder.run(customer_id ?? order.customer_id, order_date ?? order.order_date, remark ?? order.remark, totalAmount, id);
+    updateOrder.run(newOrderNo, customer_id ?? order.customer_id, order_date ?? order.order_date, remark ?? order.remark, totalAmount, id);
     if (items) {
       deleteItems.run(id);
       items.forEach((item, idx) => {
@@ -150,10 +183,13 @@ router.put('/:id', authRequired, (req, res) => {
           item.quantity || 0, item.unit_price || 0, subtotal, idx);
       });
     }
-    insertLog.run(id, req.user.id, '编辑订单', '编辑订单基本信息或明细');
+    const changed = [];
+    if (newOrderNo !== order.order_no) changed.push(`订单号 ${order.order_no} → ${newOrderNo}`);
+    changed.push('基本信息/明细');
+    insertLog.run(id, req.user.id, '编辑订单', changed.join('；'));
   });
   tx();
-  res.json({ message: '订单更新成功' });
+  res.json({ message: '订单更新成功', order_no: newOrderNo });
 });
 
 // 更新订单状态（发货/付款/开票状态、已付金额）
@@ -194,6 +230,68 @@ router.delete('/:id', authRequired, (req, res) => {
   if (!order) return res.status(404).json({ error: '订单不存在' });
   db.prepare('DELETE FROM orders WHERE id = ?').run(id);
   res.json({ message: '订单删除成功' });
+});
+
+// 登记发货（一次可登记多个订单明细的发货数量）
+router.post('/:id/ship', authRequired, (req, res) => {
+  const order_id = req.params.id;
+  const { items, shipped_date, remark } = req.body;
+  if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: '请至少登记一个明细的发货数量' });
+  const date = shipped_date || new Date().toISOString().slice(0, 10);
+
+  const order = db.prepare('SELECT id FROM orders WHERE id = ?').get(order_id);
+  if (!order) return res.status(404).json({ error: '订单不存在' });
+
+  const insertStmt = db.prepare(`
+    INSERT INTO shipping_records (order_id, order_item_id, quantity, shipped_date, remark, created_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const logStmt = db.prepare(`
+    INSERT INTO order_logs (order_id, user_id, action, detail)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  const tx = db.transaction(() => {
+    const logs = [];
+    for (const it of items) {
+      const { order_item_id, quantity } = it;
+      if (!order_item_id || !quantity || quantity <= 0) continue;
+      const oi = db.prepare('SELECT id, quantity, product_name, unit FROM order_items WHERE id = ? AND order_id = ?').get(order_item_id, order_id);
+      if (!oi) continue;
+      const shipped = db.prepare('SELECT COALESCE(SUM(quantity),0) AS s FROM shipping_records WHERE order_item_id = ?').get(order_item_id).s;
+      if (Number(shipped) + Number(quantity) > Number(oi.quantity) + 0.0001) {
+        throw new Error('明细「' + (oi.product_name || '') + '」本次发货总数超过订单数量');
+      }
+      insertStmt.run(order_id, order_item_id, quantity, date, it.remark || remark || '', req.user.id);
+      logs.push(`${oi.product_name || ''} 发货 ${quantity}${oi.unit || ''}`);
+    }
+    if (logs.length === 0) throw new Error('没有有效的发货记录');
+
+    // 更新订单发货状态
+    const allItems = db.prepare(`
+      SELECT oi.id, oi.quantity,
+             COALESCE((SELECT SUM(quantity) FROM shipping_records sr WHERE sr.order_item_id = oi.id), 0) AS shipped_qty
+      FROM order_items oi WHERE oi.order_id = ?
+    `).all(order_id);
+    let newStatus = 'PENDING';
+    if (allItems.length > 0) {
+      const hasShipped = allItems.some(i => Number(i.shipped_qty) > 0);
+      const allFull = allItems.every(i => Number(i.shipped_qty) + 0.0001 >= Number(i.quantity));
+      if (allFull) newStatus = 'SHIPPED';
+      else if (hasShipped) newStatus = 'PARTIAL_SHIPPED';
+    }
+    db.prepare("UPDATE orders SET delivery_status = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(newStatus, order_id);
+
+    logStmt.run(order_id, req.user.id, '登记发货', logs.join('；'));
+    return logs.length;
+  });
+
+  try {
+    const count = tx();
+    res.json({ message: `发货登记成功，共 ${count} 条明细` });
+  } catch (e) {
+    res.status(400).json({ error: e.message || '发货登记失败' });
+  }
 });
 
 // 对账单：按客户+日期范围汇总（含付款记录，优先抵扣期初欠款）
