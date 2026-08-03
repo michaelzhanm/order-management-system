@@ -1,3 +1,0 @@
-run = "bash setup.sh"
-hidden = [".config", "node_modules", "client/node_modules", "server/node_modules", "client/dist"]
-entrypoint = "server/src/index.js"
