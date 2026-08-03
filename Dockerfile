@@ -1,6 +1,9 @@
 # ====== 阶段1: 构建前端 ======
 FROM node:20-alpine AS frontend-builder
 
+# 使用淘宝 npm 镜像加速
+RUN npm config set registry https://registry.npmmirror.com
+
 WORKDIR /app/client
 COPY client/package.json client/package-lock.json* ./
 RUN npm install
@@ -10,8 +13,12 @@ RUN npm run build
 # ====== 阶段2: 后端运行环境 ======
 FROM node:20-alpine AS production
 
-# 安装 better-sqlite3 编译依赖
-RUN apk add --no-cache python3 make g++
+# 换清华 alpine 镜像源，避免 gcc 下载 I/O 错误
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories \
+    && apk add --no-cache python3 make g++
+
+# 使用淘宝 npm 镜像加速
+RUN npm config set registry https://registry.npmmirror.com
 
 WORKDIR /app
 
