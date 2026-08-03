@@ -97,8 +97,9 @@ export function initDB() {
     `).run('admin', hash);
   }
 
-  // 插入默认系统配置（乙方公司信息）
+  // 插入默认系统配置（乙方公司信息 + 文档模板配置）
   const defaults = {
+    // 乙方公司信息
     company_name: '我公司',
     company_contact: '',
     company_phone: '',
@@ -106,6 +107,19 @@ export function initDB() {
     company_tax_number: '',
     company_bank: '',
     company_bank_account: '',
+    // 文档通用样式
+    doc_logo_url: '',
+    doc_title_size: '24',
+    doc_font_family: '"SimSun", "宋体", "Noto Serif SC", serif',
+    doc_table_border_color: '#555555',
+    doc_amount_color: '#c0392b',
+    doc_footer_text: '本文件由企业订单管理系统自动生成',
+    // 合同条款（付款状态、备注由系统动态生成，这里配置其余条款）
+    contract_payment_terms: '甲方应在收到货物后按约定时间向乙方支付货款。\n乙方收款账户及账号见上方公司信息。',
+    contract_delivery_terms: '交货日期：双方另行协商确定。\n交货方式：乙方负责将货物运输至甲方指定地点。\n运输费用由乙方承担。',
+    contract_other_terms: '本合同一式两份，甲乙双方各执一份，具有同等法律效力。\n本合同自双方签字盖章之日起生效。',
+    // 对账单说明
+    statement_disclaimer: '本期应付 = 期初欠款 + 本期订单总金额 - 本期已付金额\n请核对以上账目，如有异议请在收到本对账单后7个工作日内联系我方。',
   };
   const stmt = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [k, v] of Object.entries(defaults)) {

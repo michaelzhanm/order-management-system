@@ -1,5 +1,6 @@
 # ====== 阶段1: 构建前端 ======
-FROM node:20-alpine AS frontend-builder
+# 使用 DaoCloud 镜像加速 node 镜像拉取
+FROM docker.m.daocloud.io/library/node:20-alpine AS frontend-builder
 
 # 使用淘宝 npm 镜像加速
 RUN npm config set registry https://registry.npmmirror.com
@@ -11,7 +12,7 @@ COPY client/ ./
 RUN npm run build
 
 # ====== 阶段2: 后端运行环境 ======
-FROM node:20-alpine AS production
+FROM docker.m.daocloud.io/library/node:20-alpine AS production
 
 # 换清华 alpine 镜像源，避免 gcc 下载 I/O 错误
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories \

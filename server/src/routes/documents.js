@@ -71,27 +71,34 @@ router.get('/statement/:customerId', authRequired, (req, res) => {
 
 // ========== HTML 模板渲染 ==========
 
-function docStyle(title) {
+function docStyle(settings) {
+  const titleSize = parseInt(settings.doc_title_size, 10) || 24;
+  const fontFamily = settings.doc_font_family || '"SimSun", "宋体", "Noto Serif SC", serif';
+  const borderColor = settings.doc_table_border_color || '#555555';
+  const amountColor = settings.doc_amount_color || '#c0392b';
   return `
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { font-family: "SimSun", "宋体", "Noto Serif SC", serif; color: #333; padding: 40px; max-width: 800px; margin: 0 auto; }
-      .doc-title { text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 30px; letter-spacing: 4px; }
+      body { font-family: ${fontFamily}; color: #333; padding: 40px; max-width: 800px; margin: 0 auto; }
+      .doc-title { text-align: center; font-size: ${titleSize}px; font-weight: bold; margin-bottom: 30px; letter-spacing: 4px; }
       .doc-header { display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 13px; }
       .info-row { margin-bottom: 8px; font-size: 14px; line-height: 1.8; }
       .info-row .label { display: inline-block; width: 80px; font-weight: bold; }
       table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 13px; }
-      th, td { border: 1px solid #555; padding: 8px 10px; text-align: center; }
+      th, td { border: 1px solid ${borderColor}; padding: 8px 10px; text-align: center; }
       th { background: #f0f0f0; font-weight: bold; }
       .amount-row { text-align: right; padding: 10px 0; font-size: 14px; }
-      .amount-row .total { font-size: 18px; font-weight: bold; color: #c0392b; }
+      .amount-row .total { font-size: 18px; font-weight: bold; color: ${amountColor}; }
       .amount-cn { font-size: 14px; font-weight: bold; margin: 5px 0; }
       .section-title { font-weight: bold; font-size: 15px; margin: 20px 0 10px; }
       .terms { font-size: 13px; line-height: 2; }
+      .terms div { margin-bottom: 2px; }
       .sign-area { display: flex; justify-content: space-between; margin-top: 60px; font-size: 14px; }
       .sign-block { width: 45%; }
       .sign-block .line { border-bottom: 1px solid #999; height: 30px; margin: 5px 0; }
       .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #999; }
+      .money-text { font-weight: 600; color: ${amountColor}; }
+      .total-amount { font-size: 22px; font-weight: 700; color: ${amountColor}; }
       @media print {
         body { padding: 20px; max-width: none; }
         .no-print { display: none; }
@@ -105,6 +112,28 @@ function docStyle(title) {
 
 function printButton() {
   return `<button class="print-btn no-print" onclick="window.print()">打印 / 保存PDF</button>`;
+}
+
+// Logo HTML（无配置则返回空）
+function logoHtml(settings) {
+  const url = (settings.doc_logo_url || '').trim();
+  if (!url) return '';
+  return `<div style="text-align:center;margin-bottom:20px;"><img src="${url}" alt="logo" style="max-height:80px;max-width:240px;" /></div>`;
+}
+
+// 多行条款文字转 HTML（每行一个 div）
+function termsToHtml(text) {
+  return (text || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => `<div>${l}</div>`)
+    .join('');
+}
+
+// 页脚文字
+function footerHtml(settings) {
+  return `<div class="footer">${settings.doc_footer_text || ''}</div>`;
 }
 
 function renderContract(order, items, settings) {
@@ -123,9 +152,10 @@ function renderContract(order, items, settings) {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>购销合同 - ${order.order_no}</title>${docStyle()}</head>
+<title>购销合同 - ${order.order_no}</title>${docStyle(settings)}</head>
 <body>
   ${printButton()}
+  ${logoHtml(settings)}
   <div class="doc-title">购 销 合 同</div>
 
   <div class="doc-header">
@@ -155,23 +185,19 @@ function renderContract(order, items, settings) {
 
   <div class="section-title">二、付款方式</div>
   <div class="terms">
-    1. 付款方式：${order.payment_status === 'PAID' ? '已付清' : order.payment_status === 'PARTIAL' ? `部分付款，已付 ¥${order.paid_amount.toFixed(2)}` : '尚未付款'}。<br>
-    2. 甲方应在收到货物后按约定时间向乙方支付货款。<br>
-    3. 乙方收款账户：${settings.company_bank || '________'}　账号：${settings.company_bank_account || '________'}
+    <div>付款方式：${order.payment_status === 'PAID' ? '已付清' : order.payment_status === 'PARTIAL' ? `部分付款，已付 ¥${order.paid_amount.toFixed(2)}` : '尚未付款'}。</div>
+    ${termsToHtml(settings.contract_payment_terms)}
   </div>
 
   <div class="section-title">三、交货条款</div>
   <div class="terms">
-    1. 交货日期：双方另行协商确定。<br>
-    2. 交货方式：乙方负责将货物运输至甲方指定地点。<br>
-    3. 运输费用由乙方承担。
+    ${termsToHtml(settings.contract_delivery_terms)}
   </div>
 
   <div class="section-title">四、其他约定</div>
   <div class="terms">
-    1. 本合同一式两份，甲乙双方各执一份，具有同等法律效力。<br>
-    2. 本合同自双方签字盖章之日起生效。<br>
-    ${order.remark ? `3. 备注：${order.remark}` : ''}
+    ${termsToHtml(settings.contract_other_terms)}
+    ${order.remark ? `<div>备注：${order.remark}</div>` : ''}
   </div>
 
   <div class="sign-area">
@@ -190,7 +216,7 @@ function renderContract(order, items, settings) {
       <div>日期：${order.order_date}</div>
     </div>
   </div>
-  <div class="footer">本合同由企业订单管理系统自动生成</div>
+  ${footerHtml(settings)}
 </body></html>`;
 }
 
@@ -211,9 +237,10 @@ function renderShippingNote(order, items, settings) {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>发货单 - ${order.order_no}</title>${docStyle()}</head>
+<title>发货单 - ${order.order_no}</title>${docStyle(settings)}</head>
 <body>
   ${printButton()}
+  ${logoHtml(settings)}
   <div class="doc-title">发 货 单</div>
 
   <div class="doc-header">
@@ -250,7 +277,7 @@ function renderShippingNote(order, items, settings) {
       <div>收货日期：　　　　年　　月　　日</div>
     </div>
   </div>
-  <div class="footer">本发货单由企业订单管理系统自动生成</div>
+  ${footerHtml(settings)}
 </body></html>`;
 }
 
@@ -272,9 +299,10 @@ function renderStatement(customer, orders, summary, settings, startDate, endDate
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>对账单 - ${customer.company_name}</title>${docStyle()}</head>
+<title>对账单 - ${customer.company_name}</title>${docStyle(settings)}</head>
 <body>
   ${printButton()}
+  ${logoHtml(settings)}
   <div class="doc-title">对 账 单</div>
 
   <div class="doc-header">
@@ -304,10 +332,9 @@ function renderStatement(customer, orders, summary, settings, startDate, endDate
     <div class="amount-cn">大写：${toChineseAmount(summary.balanceDue)}</div>
   </div>
 
-  <p style="font-size:13px;margin-top:20px;line-height:2;">
-    本期应付 = 期初欠款 + 本期订单总金额 - 本期已付金额<br>
-    请核对以上账目，如有异议请在收到本对账单后7个工作日内联系我方。
-  </p>
+  <div class="terms" style="margin-top:20px;">
+    ${termsToHtml(settings.statement_disclaimer)}
+  </div>
 
   <div class="sign-area">
     <div class="sign-block">
@@ -321,7 +348,7 @@ function renderStatement(customer, orders, summary, settings, startDate, endDate
       <div>确认日期：　　　　年　　月　　日</div>
     </div>
   </div>
-  <div class="footer">本对账单由企业订单管理系统自动生成</div>
+  ${footerHtml(settings)}
 </body></html>`;
 }
 
